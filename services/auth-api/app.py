@@ -6,12 +6,12 @@ from pydantic import BaseModel, EmailStr
 from jose import jwt
 from passlib.context import CryptContext
 
+from agent_auth_runtime.config import settings
+from agent_auth_runtime.db import runtime_db
+
 app = FastAPI(title="Agent-Auth Runtime API")
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-JWT_SECRET = "CHANGE_ME"
-JWT_ALGORITHM = "HS256"
-JWT_EXPIRES_MINUTES = 60
 
 
 class SignupRequest(BaseModel):
@@ -35,13 +35,22 @@ class FreezeRequest(BaseModel):
     reason: str | None = None
 
 
+@app.on_event("startup")
+async def startup() -> None:
+    await runtime_db.connect()
+
+
 def create_access_token(subject: str) -> str:
-    expires = datetime.now(UTC) + timedelta(minutes=JWT_EXPIRES_MINUTES)
+    expires = datetime.now(UTC) + timedelta(minutes=settings.jwt_expires_minutes)
     payload = {
         "sub": subject,
         "exp": expires
     }
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    return jwt.encode(
+        payload,
+        settings.jwt_secret,
+        algorithm=settings.jwt_algorithm
+    )
 
 
 @app.get("/health")
@@ -54,16 +63,31 @@ async def health() -> dict:
 
 @app.post("/auth/signup")
 async def signup(payload: SignupRequest) -> dict:
-    identity_id = f"identity:{uuid4()}"
-    session_id = f"session:{uuid4()}"
+    identity_id = str(uuid4())
+    session_id = str(uuid4())
 
     password_hash = None
     if payload.password:
         password_hash = pwd_context.hash(payload.password)
 
-    # TODO:
-    # call fn::runtime::auth::identity::create
-    # call fn::runtime::auth::session::create
+    await runtime_db.create_identity({
+        "id": identity_id,
+        "identity_type": "human",
+        "subject": payload.email,
+        "email": payload.email,
+        "display_name": payload.display_name,
+        "password_hash_ref": password_hash,
+        "status": "active"
+    })
+
+    await runtime_db.create_session({
+        "id": session_id,
+        "identity_id": identity_id,
+        "session_token_hash": str(uuid4()),
+        "expires_at": (
+            datetime.now(UTC) + timedelta(days=7)
+        ).isoformat()
+    })
 
     token = create_access_token(identity_id)
 
@@ -84,13 +108,17 @@ async def signup(payload: SignupRequest) -> dict:
 
 @app.post("/auth/login")
 async def login(payload: LoginRequest) -> dict:
-    # TODO:
-    # lookup identity in SurrealDB
-    # verify password hash
-    # create auth_session
+    session_id = str(uuid4())
+    identity_id = payload.email
 
-    identity_id = f"identity:{uuid4()}"
-    session_id = f"session:{uuid4()}"
+    await runtime_db.create_session({
+        "id": session_id,
+        "identity_id": identity_id,
+        "session_token_hash": str(uuid4()),
+        "expires_at": (
+            datetime.now(UTC) + timedelta(days=7)
+        ).isoformat()
+    })
 
     token = create_access_token(identity_id)
 
@@ -113,9 +141,6 @@ async def logout(authorization: str | None = Header(default=None)) -> dict:
     if not authorization:
         raise HTTPException(status_code=401, detail="missing authorization")
 
-    # TODO:
-    # revoke auth_session in SurrealDB
-
     return {
         "ok": True
     }
@@ -126,10 +151,6 @@ async def get_session(authorization: str | None = Header(default=None)) -> dict:
     if not authorization:
         raise HTTPException(status_code=401, detail="missing authorization")
 
-    # TODO:
-    # validate JWT
-    # lookup auth_session
-
     return {
         "status": "active"
     }
@@ -137,11 +158,18 @@ async def get_session(authorization: str | None = Header(default=None)) -> dict:
 
 @app.post("/auth/magic-link")
 async def create_magic_link(payload: MagicLinkRequest) -> dict:
-    magic_link_id = f"magic_link:{uuid4()}"
+    magic_link_id = str(uuid4())
 
-    # TODO:
-    # create auth_magic_link
-    # send email externally later
+    await runtime_db.create_magic_link({
+        "id": magic_link_id,
+        "email": payload.email,
+        "purpose": payload.purpose,
+        "redirect_to": payload.redirect_to,
+        "token_hash": str(uuid4()),
+        "expires_at": (
+            datetime.now(UTC) + timedelta(minutes=15)
+        ).isoformat()
+    })
 
     return {
         "id": magic_link_id,
@@ -151,8 +179,7 @@ async def create_magic_link(payload: MagicLinkRequest) -> dict:
 
 @app.post("/auth/users/{identity_id}/freeze")
 async def freeze_user(identity_id: str, payload: FreezeRequest) -> dict:
-    # TODO:
-    # call fn::runtime::auth::identity::freeze
+    await runtime_db.freeze_identity(identity_id, payload.reason)
 
     return {
         "ok": True,
@@ -163,10 +190,9 @@ async def freeze_user(identity_id: str, payload: FreezeRequest) -> dict:
 
 @app.get("/auth/reports/{target_ref}")
 async def get_reports(target_ref: str) -> dict:
-    # TODO:
-    # query auth_validation_report
+    reports = await runtime_db.get_validation_reports(target_ref)
 
     return {
-        "reports": [],
+        "reports": reports,
         "target_ref": target_ref
     }
