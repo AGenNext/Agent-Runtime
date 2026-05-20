@@ -60,6 +60,12 @@ class RuntimeDB:
             {"session_id": session_id}
         )
 
+    async def get_session_by_refresh_hash(self, refresh_token_hash: str) -> object:
+        return await self.client.query(
+            "SELECT * FROM auth_session WHERE refresh_token_hash = $refresh_token_hash LIMIT 1;",
+            {"refresh_token_hash": refresh_token_hash}
+        )
+
     async def revoke_session(self, session_id: str, reason: str | None) -> object:
         return await self.client.query(
             "RETURN fn::runtime::auth::session::revoke($session_id, $reason);",
