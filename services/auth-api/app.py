@@ -25,6 +25,10 @@ class LoginRequest(BaseModel):
     password: str | None = None
 
 
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
 class MagicLinkRequest(BaseModel):
     email: EmailStr
     purpose: str = "login"
@@ -42,10 +46,7 @@ async def startup() -> None:
 
 def create_access_token(subject: str, session_id: str | None = None) -> str:
     expires = datetime.now(UTC) + timedelta(minutes=settings.jwt_expires_minutes)
-    payload = {
-        "sub": subject,
-        "exp": expires,
-    }
+    payload = {"sub": subject, "exp": expires}
     if session_id:
         payload["sid"] = session_id
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
@@ -54,7 +55,6 @@ def create_access_token(subject: str, session_id: str | None = None) -> str:
 def decode_bearer_token(authorization: str | None) -> dict:
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="missing bearer token")
-
     token = authorization.split(" ", 1)[1]
     try:
         return jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
@@ -87,39 +87,13 @@ async def signup(payload: SignupRequest) -> dict:
 
     identity_id = str(uuid4())
     session_id = str(uuid4())
-
+    refresh_token = str(uuid4())
     password_hash = pwd_context.hash(payload.password) if payload.password else None
 
-    await runtime_db.create_identity({
-        "id": identity_id,
-        "identity_type": "human",
-        "subject": payload.email,
-        "email": payload.email,
-        "display_name": payload.display_name,
-        "password_hash_ref": password_hash,
-        "status": "active",
-    })
+    await runtime_db.create_identity({"id": identity_id, "identity_type": "human", "subject": payload.email, "email": payload.email, "display_name": payload.display_name, "password_hash_ref": password_hash, "status": "active"})
+    await runtime_db.create_session({"id": session_id, "identity_id": identity_id, "session_token_hash": str(uuid4()), "refresh_token_hash": refresh_token, "jwt_id": session_id, "expires_at": (datetime.now(UTC) + timedelta(days=7)).isoformat()})
 
-    await runtime_db.create_session({
-        "id": session_id,
-        "identity_id": identity_id,
-        "session_token_hash": str(uuid4()),
-        "jwt_id": session_id,
-        "expires_at": (datetime.now(UTC) + timedelta(days=7)).isoformat(),
-    })
-
-    token = create_access_token(identity_id, session_id)
-
-    return {
-        "identity": {
-            "id": identity_id,
-            "email": payload.email,
-            "display_name": payload.display_name,
-            "status": "active",
-        },
-        "session": {"id": session_id, "status": "active"},
-        "access_token": token,
-    }
+    return {"identity": {"id": identity_id, "email": payload.email, "display_name": payload.display_name, "status": "active"}, "session": {"id": session_id, "status": "active"}, "access_token": create_access_token(identity_id, session_id), "refresh_token": refresh_token}
 
 
 @app.post("/auth/login")
@@ -127,7 +101,6 @@ async def login(payload: LoginRequest) -> dict:
     identity = first_result(await runtime_db.get_identity_by_email(payload.email))
     if not isinstance(identity, dict):
         raise HTTPException(status_code=401, detail="invalid credentials")
-
     if identity.get("status") != "active":
         raise HTTPException(status_code=403, detail="identity is not active")
 
@@ -140,28 +113,31 @@ async def login(payload: LoginRequest) -> dict:
 
     identity_id = str(identity.get("id", "")).split(":")[-1]
     session_id = str(uuid4())
+    refresh_token = str(uuid4())
 
-    await runtime_db.create_session({
-        "id": session_id,
-        "identity_id": identity_id,
-        "session_token_hash": str(uuid4()),
-        "jwt_id": session_id,
-        "expires_at": (datetime.now(UTC) + timedelta(days=7)).isoformat(),
-    })
+    await runtime_db.create_session({"id": session_id, "identity_id": identity_id, "session_token_hash": str(uuid4()), "refresh_token_hash": refresh_token, "jwt_id": session_id, "expires_at": (datetime.now(UTC) + timedelta(days=7)).isoformat()})
     await runtime_db.touch_identity_login(identity_id)
 
-    token = create_access_token(identity_id, session_id)
+    return {"identity": {"id": identity_id, "email": identity.get("email"), "display_name": identity.get("display_name"), "status": identity.get("status")}, "session": {"id": session_id, "status": "active"}, "access_token": create_access_token(identity_id, session_id), "refresh_token": refresh_token}
 
-    return {
-        "identity": {
-            "id": identity_id,
-            "email": identity.get("email"),
-            "display_name": identity.get("display_name"),
-            "status": identity.get("status"),
-        },
-        "session": {"id": session_id, "status": "active"},
-        "access_token": token,
-    }
+
+@app.post("/auth/refresh")
+async def refresh(payload: RefreshRequest) -> dict:
+    session = first_result(await runtime_db.get_session_by_refresh_hash(payload.refresh_token))
+    if not isinstance(session, dict):
+        raise HTTPException(status_code=401, detail="invalid refresh token")
+    if session.get("status") != "active":
+        raise HTTPException(status_code=401, detail="session not active")
+
+    identity_ref = str(session.get("identity", ""))
+    identity_id = identity_ref.split(":")[-1]
+    session_id = str(session.get("id", "")).split(":")[-1]
+
+    identity = first_result(await runtime_db.get_identity_by_id(identity_id))
+    if not isinstance(identity, dict) or identity.get("status") != "active":
+        raise HTTPException(status_code=403, detail="identity is not active")
+
+    return {"identity": identity, "session": session, "access_token": create_access_token(identity_id, session_id), "refresh_token": payload.refresh_token}
 
 
 @app.post("/auth/logout")
@@ -178,32 +154,19 @@ async def get_session(authorization: str | None = Header(default=None)) -> dict:
     claims = decode_bearer_token(authorization)
     identity_id = claims.get("sub")
     session_id = claims.get("sid")
-
     identity = first_result(await runtime_db.get_identity_by_id(identity_id)) if identity_id else None
     session = first_result(await runtime_db.get_session_by_id(session_id)) if session_id else None
-
     if not identity or not session:
         raise HTTPException(status_code=401, detail="session not found")
-
     if isinstance(session, dict) and session.get("status") != "active":
         raise HTTPException(status_code=401, detail="session not active")
-
     return {"identity": identity, "session": session}
 
 
 @app.post("/auth/magic-link")
 async def create_magic_link(payload: MagicLinkRequest) -> dict:
     magic_link_id = str(uuid4())
-
-    await runtime_db.create_magic_link({
-        "id": magic_link_id,
-        "email": payload.email,
-        "purpose": payload.purpose,
-        "redirect_to": payload.redirect_to,
-        "token_hash": str(uuid4()),
-        "expires_at": (datetime.now(UTC) + timedelta(minutes=15)).isoformat(),
-    })
-
+    await runtime_db.create_magic_link({"id": magic_link_id, "email": payload.email, "purpose": payload.purpose, "redirect_to": payload.redirect_to, "token_hash": str(uuid4()), "expires_at": (datetime.now(UTC) + timedelta(minutes=15)).isoformat()})
     return {"id": magic_link_id, "status": "pending"}
 
 
