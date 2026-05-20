@@ -1,0 +1,369 @@
+openapi: 3.1.0
+info:
+  title: Agent-Auth Runtime API
+  version: 0.1.0
+  description: API-first auth surface backed by Agent-Runtime SurrealQL functions.
+servers:
+  - url: https://api.example.com
+paths:
+  /auth/signup:
+    post:
+      operationId: signup
+      summary: Create an identity and initial session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignupRequest'
+      responses:
+        '200':
+          description: Signup result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResult'
+  /auth/login:
+    post:
+      operationId: login
+      summary: Create a session for an existing identity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResult'
+  /auth/logout:
+    post:
+      operationId: logout
+      summary: Revoke current session
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogoutRequest'
+      responses:
+        '200':
+          description: Logout result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResult'
+  /auth/session:
+    get:
+      operationId: getSession
+      summary: Return current session
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionResult'
+  /auth/magic-link:
+    post:
+      operationId: createMagicLink
+      summary: Create a magic link token record
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MagicLinkRequest'
+      responses:
+        '200':
+          description: Magic link created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MagicLinkResult'
+  /auth/magic-link/verify:
+    post:
+      operationId: verifyMagicLink
+      summary: Verify and consume a magic link token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenVerifyRequest'
+      responses:
+        '200':
+          description: Verification result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResult'
+  /auth/oauth/{provider}/authorize:
+    post:
+      operationId: createOAuthAuthorizeUrl
+      summary: Create OAuth authorization state
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthAuthorizeRequest'
+      responses:
+        '200':
+          description: OAuth authorize URL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthAuthorizeResult'
+  /auth/oauth/{provider}/callback:
+    post:
+      operationId: oauthCallback
+      summary: Complete OAuth callback and create/link identity
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthCallbackRequest'
+      responses:
+        '200':
+          description: OAuth auth result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResult'
+  /auth/users/{identity_id}:
+    get:
+      operationId: getUser
+      summary: Get identity profile
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: identity_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResult'
+  /auth/users/{identity_id}/freeze:
+    post:
+      operationId: freezeUser
+      summary: Freeze identity access
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: identity_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReasonRequest'
+      responses:
+        '200':
+          description: Freeze result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResult'
+  /auth/reports/{target_ref}:
+    get:
+      operationId: getAuthValidationReports
+      summary: Get DB-native auth validation reports
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: target_ref
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Validation reports
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationReportsResult'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    SignupRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+        display_name:
+          type: string
+        metadata:
+          type: object
+    LoginRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+    LogoutRequest:
+      type: object
+      properties:
+        session_id:
+          type: string
+    MagicLinkRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+        purpose:
+          type: string
+          enum: [signup, login, verify_email, passwordless]
+        redirect_to:
+          type: string
+    TokenVerifyRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+    OAuthAuthorizeRequest:
+      type: object
+      properties:
+        redirect_to:
+          type: string
+        scopes:
+          type: array
+          items:
+            type: string
+    OAuthCallbackRequest:
+      type: object
+      required: [code, state]
+      properties:
+        code:
+          type: string
+        state:
+          type: string
+    ReasonRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+    AuthResult:
+      type: object
+      required: [identity, session]
+      properties:
+        identity:
+          $ref: '#/components/schemas/Identity'
+        session:
+          $ref: '#/components/schemas/Session'
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+    Identity:
+      type: object
+      properties:
+        id:
+          type: string
+        subject:
+          type: string
+        email:
+          type: string
+        display_name:
+          type: string
+        status:
+          type: string
+    Session:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+    StatusResult:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+    SessionResult:
+      type: object
+      properties:
+        session:
+          $ref: '#/components/schemas/Session'
+        identity:
+          $ref: '#/components/schemas/Identity'
+    MagicLinkResult:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+    OAuthAuthorizeResult:
+      type: object
+      required: [url, state]
+      properties:
+        url:
+          type: string
+        state:
+          type: string
+    UserResult:
+      type: object
+      properties:
+        identity:
+          $ref: '#/components/schemas/Identity'
+    ValidationReportsResult:
+      type: object
+      properties:
+        reports:
+          type: array
+          items:
+            type: object
