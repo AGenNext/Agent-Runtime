@@ -88,15 +88,15 @@ Rust runtime
 
 Rust treats SurrealQL governance functions as the only mutation path. SurrealDB treats Rust as the only caller permitted to drive transitions.
 
-## Current gap
+## Closed gap
 
-`surreal/flows/agent_runtime.flows.surql` is currently raw `CREATE`/`UPDATE` scripts rather than callable `DEFINE FUNCTION` definitions, and it uses `runtime_run:$run`, which is not valid parameterized record-ID syntax. The auth layer already shows the correct pattern with `type::record("auth_session", $id)` and `fn::runtime::auth::*`.
+The original `surreal/flows/agent_runtime.flows.surql` was raw `CREATE`/`UPDATE` scripts rather than callable `DEFINE FUNCTION` definitions, and it used `runtime_run:$run`, which is not valid parameterized record-ID syntax. The auth layer already showed the correct pattern with `type::record("auth_session", $id)` and `fn::runtime::auth::*`.
 
-For Rust to invoke governance safely and atomically, those flows should become `fn::runtime::governance::*` functions matching the proven `fn::runtime::auth::*` pattern.
+Those flows are now `fn::runtime::governance::*` functions in `surreal/functions/agent_runtime.functions.surql`, using `type::record(...)`, with each transition emitting its audit row in the same call. Rust invokes these as the only mutation path.
 
 ## Implementation order
 
-1. Convert `surreal/flows` into `fn::runtime::governance::*` functions using `type::record(...)`, each emitting its audit row in the same call.
+1. Convert `surreal/flows` into `fn::runtime::governance::*` functions using `type::record(...)`, each emitting its audit row in the same call. **(done — `surreal/functions/agent_runtime.functions.surql`)**
 2. Scaffold the Rust runtime crate: domain model, pure decision logic, a store trait with an in-memory mock for offline tests, and a SurrealDB binding that invokes the governance functions.
 3. Wire trust-threshold containment and access gating in Rust on top of those functions.
 
