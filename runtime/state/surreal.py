@@ -18,6 +18,12 @@ class SurrealRuntimeStore:
             state,
         )
 
+    async def update_workflow_run(self, workflow_id: str, state: dict):
+        return await self.client.merge(
+            f"workflow_run:{workflow_id}",
+            state,
+        )
+
     async def write_action_event(self, action_id: str, payload: dict):
         return await self.client.create(
             f"action_log:{action_id}",
