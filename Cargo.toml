@@ -1,0 +1,3 @@
+[workspace]
+members = ["crates/runtime-core"]
+resolver = "2"

@@ -1,0 +1,16 @@
+[package]
+name = "runtime-core"
+version = "0.1.0"
+edition = "2021"
+description = "AGenNext Agent-Runtime governance engine core. Rust governs; SurrealQL persists."
+license = "Apache-2.0"
+
+[features]
+default = []
+# Reserved for the SurrealDB binding that invokes fn::runtime::governance::*.
+# The binding (and its surrealdb/tokio dependencies) lands in a follow-up;
+# the call contract it must honor lives in calls.rs and is pinned to the
+# surreal/functions/*.surql definitions by test.
+surreal = []
+
+[dependencies]
