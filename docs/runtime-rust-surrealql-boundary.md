@@ -97,8 +97,8 @@ Those flows are now `fn::runtime::governance::*` functions in `surreal/functions
 ## Implementation order
 
 1. Convert `surreal/flows` into `fn::runtime::governance::*` functions using `type::record(...)`, each emitting its audit row in the same call. **(done — `surreal/functions/agent_runtime.functions.surql`)**
-2. Scaffold the Rust runtime crate: domain model, pure decision logic, a store trait with an in-memory mock for offline tests, and a SurrealDB binding that invokes the governance functions.
-3. Wire trust-threshold containment and access gating in Rust on top of those functions.
+2. Scaffold the Rust runtime crate: domain model, pure decision logic, a store trait with an in-memory mock for offline tests, and a SurrealDB binding that invokes the governance functions. **(done — `crates/runtime-core`; SurrealDB binding deferred behind the `surreal` feature, with the call contract pinned in `calls.rs`)**
+3. Wire trust-threshold containment and access gating in Rust on top of those functions. **(done in core — `decision.rs` + `engine.rs`; remaining: the live SurrealDB binding and propagating effects to running processes)**
 
 ## Rule
 
