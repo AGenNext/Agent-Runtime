@@ -1,0 +1,35 @@
+DEFINE TABLE fabric_run SCHEMAFULL;
+DEFINE FIELD runId ON fabric_run TYPE string;
+DEFINE FIELD agent ON fabric_run TYPE object;
+DEFINE FIELD status ON fabric_run TYPE string;
+DEFINE FIELD declared ON fabric_run TYPE object;
+DEFINE FIELD observed ON fabric_run TYPE object;
+DEFINE FIELD drift ON fabric_run TYPE array<string>;
+DEFINE FIELD events ON fabric_run TYPE array<object>;
+DEFINE FIELD policyDecisions ON fabric_run TYPE array<object>;
+DEFINE FIELD evidence ON fabric_run TYPE array<object>;
+DEFINE FIELD createdAt ON fabric_run TYPE datetime DEFAULT time::now();
+DEFINE FIELD updatedAt ON fabric_run TYPE datetime DEFAULT time::now();
+DEFINE INDEX fabric_run_runId_unique ON fabric_run COLUMNS runId UNIQUE;
+
+DEFINE TABLE fabric_event SCHEMAFULL;
+DEFINE FIELD runId ON fabric_event TYPE string;
+DEFINE FIELD event ON fabric_event TYPE object;
+DEFINE FIELD eventType ON fabric_event TYPE string;
+DEFINE FIELD subject ON fabric_event TYPE string;
+DEFINE FIELD emittedAt ON fabric_event TYPE datetime;
+DEFINE FIELD createdAt ON fabric_event TYPE datetime DEFAULT time::now();
+DEFINE INDEX fabric_event_runId_idx ON fabric_event COLUMNS runId;
+DEFINE INDEX fabric_event_type_idx ON fabric_event COLUMNS eventType;
+
+DEFINE TABLE fabric_policy_decision SCHEMAFULL;
+DEFINE FIELD runId ON fabric_policy_decision TYPE string;
+DEFINE FIELD decision ON fabric_policy_decision TYPE object;
+DEFINE FIELD result ON fabric_policy_decision TYPE string;
+DEFINE FIELD subjectId ON fabric_policy_decision TYPE string;
+DEFINE FIELD action ON fabric_policy_decision TYPE string;
+DEFINE FIELD resourceId ON fabric_policy_decision TYPE string;
+DEFINE FIELD decidedAt ON fabric_policy_decision TYPE datetime;
+DEFINE FIELD createdAt ON fabric_policy_decision TYPE datetime DEFAULT time::now();
+DEFINE INDEX fabric_policy_decision_runId_idx ON fabric_policy_decision COLUMNS runId;
+DEFINE INDEX fabric_policy_decision_result_idx ON fabric_policy_decision COLUMNS result;
